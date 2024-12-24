@@ -61,4 +61,4 @@ jobs:
                -Wl,--gc-sections -Wl,--allow-shlib-undefined -fno-sycl-id-queries-fit-in-int  -fuse-ld=lld         \
                -fsycl-device-code-split=per_kernel -Wl,-z,noexecstack,-z,relro,-z,now -ipo \
                -I ./include/  src/test.cpp -o bin/test
-          ./bin/test
+          for i in `seq 1 12`; do ./bin/test; done;
