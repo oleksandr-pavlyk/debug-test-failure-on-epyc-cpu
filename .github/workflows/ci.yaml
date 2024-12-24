@@ -1,0 +1,56 @@
+name: Build C++ reproducer
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions: read-all
+
+jobs:
+  generate-coverage:
+    name: Build C++ reproducer
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      pull-requests: write
+
+    env:
+      ONEAPI_ROOT: /opt/intel/oneapi
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+        with:
+          access_token: ${{ github.token }}
+
+      - name: Add Intel repository
+        run: |
+          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          cat GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt update
+
+      - name: Install latest Intel OneAPI
+        run: |
+          sudo apt install intel-oneapi-compiler-dpcpp-cpp
+          sudo apt install intel-oneapi-tbb
+          sudo apt install intel-oneapi-umf
+          sudo apt install hwloc
+
+      - name: Run SYCL list
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          sycl-ls --verbose
+
+      - name: Checkout repo
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+  
+      - name: Build example
+        shell: bash -l {0}
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          icpx -fsycl src/test.cpp -I ./include/ -o bin/test
+          ./bin/test
