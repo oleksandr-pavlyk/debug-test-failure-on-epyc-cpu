@@ -52,5 +52,13 @@ jobs:
         shell: bash -l {0}
         run: |
           source /opt/intel/oneapi/setvars.sh
-          icpx -fsycl src/test.cpp -I ./include/ -o bin/test
+          icpx -fsycl -fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize \
+               -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -Wall -Wextra -Winit-self     \
+               -Wunused-function -Wuninitialized -Wmissing-declarations -Wstrict-prototypes -Wno-unused-parameter  \
+               -fdiagnostics-color=auto -fstack-protector -fstack-protector-all -fpic -fPIC -D_FORTIFY_SOURCE=2    \
+               -Wformat -Wformat-security -fno-delete-null-pointer-checks -fwrapv  -O3 -DNDEBUG -std=gnu++17 -fPIC \
+               -fsycl -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags    \
+               -Wl,--gc-sections -Wl,--allow-shlib-undefined -fno-sycl-id-queries-fit-in-int  -fuse-ld=lld         \
+               -fsycl-device-code-split=per_kernel -Wl,-z,noexecstack,-z,relro,-z,now -ipo \
+               -I ./include/  src/test.cpp -o bin/test
           ./bin/test
