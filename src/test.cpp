@@ -26,7 +26,7 @@ int main(void) {
   using argTy = std::int8_t;
   using IndexTy = std::int64_t;
   
-  const std::size_t n = 255 * 2;
+  const std::size_t n = 1021 * 2;
   const std::size_t k = 5;
   
   const std::size_t shift = 734;
