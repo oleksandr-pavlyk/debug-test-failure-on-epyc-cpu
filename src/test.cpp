@@ -20,17 +20,9 @@ void echo_device(const sycl::queue q)
   return;
 }
 
-int main(void) {
-  sycl::queue q{sycl::default_selector_v};
-
-  using argTy = std::int8_t;
-  using IndexTy = std::int64_t;
-  
-  const std::size_t n = 1021 * 2;
-  const std::size_t k = 5;
-  
-  const std::size_t shift = 734;
-
+template <typename argTy, typename IndexTy>
+void run_test(sycl::queue &q, size_t n, size_t k, size_t shift) 
+{
   argTy *data = sycl::malloc_device<argTy>(n, q);
   argTy *topk_vals = sycl::malloc_device<argTy>(k, q);
   IndexTy *topk_idx = sycl::malloc_device<IndexTy>(k, q);
@@ -38,10 +30,10 @@ int main(void) {
   sycl::event pop_ev =
     q.submit([&](sycl::handler &cgh) {
       cgh.parallel_for({n},[=](sycl::id<1> id) {
-	const std::size_t i = id[0];
-	const std::size_t shifted = ((i + shift) % n);
+        const std::size_t i = id[0];
+        const std::size_t shifted = ((i + shift) % n);
 
-	data[i] = (2*shifted < n) ? argTy(0) : argTy(1);
+        data[i] = (2*shifted < n) ? argTy(0) : argTy(1);
       });
     });
 
@@ -90,6 +82,45 @@ int main(void) {
 
   delete[] host_topk_idx;
   delete[] host_topk_vals;
+}
+
+int main(void) {
+  sycl::queue q{sycl::default_selector_v};
+
+  
+  const std::size_t n = 1021 * 2;
+  const std::size_t k = 5;
+  const std::size_t shift = 734;
+
+  {
+    std::cout << "++++++++++++ i1 i8\n";
+    using argTy = std::int8_t;
+    using IndexTy = std::int64_t;
+
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+  }
+
+  {
+    std::cout << "++++++++++++ i2 i8\n";
+    using argTy = std::int16_t;
+    using IndexTy = std::int64_t;
+
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+  }
+
+  {
+    std::cout << "++++++++++++ i1 i8\n";
+    using argTy = std::int8_t;
+    using IndexTy = std::int64_t;
+
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+  }
 
   return 0;
 }
