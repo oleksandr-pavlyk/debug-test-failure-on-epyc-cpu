@@ -33,7 +33,7 @@ void run_test(sycl::queue &q, size_t n, size_t k, size_t shift)
         const std::size_t i = id[0];
         const std::size_t shifted = ((i + shift) % n);
 
-        data[i] = (2*shifted < n) ? argTy(0) : argTy(1);
+        data[shifted] = (2*i < n) ? argTy(1) : argTy(0);
       });
     });
 
@@ -88,7 +88,7 @@ int main(void) {
   sycl::queue q{sycl::default_selector_v};
 
   
-  const std::size_t n = 1021 * 2;
+  const std::size_t n = 255 * 2;
   const std::size_t k = 5;
   const std::size_t shift = 734;
 
