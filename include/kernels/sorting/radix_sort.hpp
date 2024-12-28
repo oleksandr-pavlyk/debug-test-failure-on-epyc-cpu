@@ -63,6 +63,47 @@ class radix_sort_reorder_peer_kernel;
 template <std::uint32_t, bool, typename... TrailingNames>
 class radix_sort_reorder_kernel;
 
+/*! @brief Computes smallest exponent such that `n <= (1 << exponent)` */
+template <typename SizeT,
+          std::enable_if_t<std::is_unsigned_v<SizeT> &&
+                               sizeof(SizeT) == sizeof(std::uint64_t),
+                           int> = 0>
+std::uint32_t ceil_log2(SizeT n)
+{
+    if (n <= 1)
+        return std::uint32_t{1};
+
+    std::uint32_t exp{1};
+    --n;
+    // if n > 2^b, n = q * 2^b + r for q > 0 and 0 <= r < 2^b
+    // ceil_log2(q * 2^b + r) == ceil_log2(q * 2^b) == q + ceil_log2(n1)
+    if (n >= (SizeT{1} << 32)) {
+        n >>= 32;
+        exp += 32;
+    }
+    if (n >= (SizeT{1} << 16)) {
+        n >>= 16;
+        exp += 16;
+    }
+    if (n >= (SizeT{1} << 8)) {
+        n >>= 8;
+        exp += 8;
+    }
+    if (n >= (SizeT{1} << 4)) {
+        n >>= 4;
+        exp += 4;
+    }
+    if (n >= (SizeT{1} << 2)) {
+        n >>= 2;
+        exp += 2;
+    }
+    if (n >= (SizeT{1} << 1)) {
+        n >>= 1;
+        ++exp;
+    }
+    return exp;
+}
+
 //----------------------------------------------------------
 // bitwise order-preserving conversions to unsigned integers
 //----------------------------------------------------------
@@ -1145,7 +1186,7 @@ private:
         const std::size_t max_slm_size =
             dev.template get_info<sycl::info::device::local_mem_size>() / 2;
 
-        const auto n_uniform = 1 << (std::uint32_t(sycl::log2(static_cast<double>(n - 1))) + 1);
+        const auto n_uniform = 1 << ceil_log2(n);
         const auto req_slm_size_val = sizeof(T) * n_uniform;
 
         return ((req_slm_size_val + req_slm_size_counters) <= max_slm_size)
@@ -1605,20 +1646,15 @@ sycl::event parallel_radix_sort_impl(sycl::queue &exec_q,
                                                    n_counts, count_ptr, proj_op,
                                                    is_ascending, depends);
 
-            sort_ev = exec_q.submit([=](sycl::handler &cgh) {
-                cgh.depends_on(sort_ev);
-                const sycl::context &ctx = exec_q.get_context();
-
-                using dpctl::tensor::alloc_utils::sycl_free_noexcept;
-                cgh.host_task(
-                    [ctx, count_ptr]() { sycl_free_noexcept(count_ptr, ctx); });
-            });
+            sort_ev = dpctl::tensor::alloc_utils::async_smart_free(
+                exec_q, {sort_ev}, count_owner);
 
             return sort_ev;
         }
 
         auto tmp_arr_owner =
-            dpctl::tensor::alloc_utils::smart_malloc_device<ValueT>(n_iters * n_to_sort, exec_q);
+            dpctl::tensor::alloc_utils::smart_malloc_device<ValueT>(
+                n_iters * n_to_sort, exec_q);
 
         ValueT *tmp_arr = tmp_arr_owner.get();
 
@@ -1654,19 +1690,8 @@ sycl::event parallel_radix_sort_impl(sycl::queue &exec_q,
             }
         }
 
-        sort_ev = exec_q.submit([=](sycl::handler &cgh) {
-            cgh.depends_on(sort_ev);
-
-            const sycl::context &ctx = exec_q.get_context();
-
-            using dpctl::tensor::alloc_utils::sycl_free_noexcept;
-            cgh.host_task([ctx, count_ptr, tmp_arr]() {
-                sycl_free_noexcept(tmp_arr, ctx);
-                sycl_free_noexcept(count_ptr, ctx);
-            });
-        });
-        count_owner.release();
-        tmp_arr_owner.release();
+        sort_ev = dpctl::tensor::alloc_utils::async_smart_free(
+            exec_q, {sort_ev}, tmp_arr_owner, count_owner);
     }
 
     return sort_ev;
@@ -1768,8 +1793,9 @@ radix_argsort_axis1_contig_impl(sycl::queue &exec_q,
         reinterpret_cast<IndexTy *>(res_cp) + iter_res_offset + sort_res_offset;
 
     const std::size_t total_nelems = iter_nelems * sort_nelems;
-    auto workspace_owner = 
-        dpctl::tensor::alloc_utils::smart_malloc_device<IndexTy>(total_nelems, exec_q);
+    auto workspace_owner =
+        dpctl::tensor::alloc_utils::smart_malloc_device<IndexTy>(total_nelems,
+                                                                 exec_q);
 
     // get raw USM pointer
     IndexTy *workspace = workspace_owner.get();
@@ -1781,52 +1807,25 @@ radix_argsort_axis1_contig_impl(sycl::queue &exec_q,
 
     using IotaKernelName = radix_argsort_iota_krn<argTy, IndexTy>;
 
-#if 1
     using dpctl::tensor::kernels::sort_utils_detail::iota_impl;
 
     sycl::event iota_ev = iota_impl<IotaKernelName, IndexTy>(
         exec_q, workspace, total_nelems, depends);
-#else
-
-    sycl::event iota_ev = exec_q.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(depends);
-
-        cgh.parallel_for<IotaKernelName>(
-            sycl::range<1>(total_nelems), [=](sycl::id<1> id) {
-                size_t i = id[0];
-                IndexTy sort_id = static_cast<IndexTy>(i);
-                workspace[i] = sort_id;
-            });
-    });
-#endif
 
     sycl::event radix_sort_ev =
         radix_sort_details::parallel_radix_sort_impl<IndexTy, IndexedProjT>(
             exec_q, iter_nelems, sort_nelems, workspace, res_tp, proj_op,
             sort_ascending, {iota_ev});
 
-    sycl::event map_back_ev = exec_q.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(radix_sort_ev);
+    using MapBackKernelName = radix_argsort_index_write_out_krn<argTy, IndexTy>;
+    using dpctl::tensor::kernels::sort_utils_detail::map_back_impl;
 
-        using KernelName = radix_argsort_index_write_out_krn<argTy, IndexTy>;
+    sycl::event map_back_ev = map_back_impl<MapBackKernelName, IndexTy>(
+        exec_q, total_nelems, res_tp, res_tp, sort_nelems, {radix_sort_ev});
 
-        cgh.parallel_for<KernelName>(
-            sycl::range<1>(total_nelems), [=](sycl::id<1> id) {
-                IndexTy linear_index = res_tp[id];
-                res_tp[id] = (linear_index % sort_nelems);
-            });
-    });
+    sycl::event cleanup_ev = dpctl::tensor::alloc_utils::async_smart_free(
+        exec_q, {map_back_ev}, workspace_owner);
 
-    sycl::event cleanup_ev = exec_q.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(map_back_ev);
-
-        const sycl::context &ctx = exec_q.get_context();
-
-        using dpctl::tensor::alloc_utils::sycl_free_noexcept;
-        cgh.host_task([ctx, workspace] { sycl_free_noexcept(workspace, ctx); });
-    });
-
-    workspace_owner.release();
     return cleanup_ev;
 }
 

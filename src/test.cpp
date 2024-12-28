@@ -113,6 +113,16 @@ int main(void) {
   }
 
   {
+    std::cout << "++++++++++++ u1 i8\n";
+    using argTy = std::uint8_t;
+    using IndexTy = std::int64_t;
+
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+    run_test<argTy, IndexTy>(q, n, k, shift);
+  }
+
+  {
     std::cout << "++++++++++++ i1 i8\n";
     using argTy = std::int8_t;
     using IndexTy = std::int64_t;
