@@ -70,13 +70,14 @@ template <typename SizeT,
                            int> = 0>
 std::uint32_t ceil_log2(SizeT n)
 {
+    // if n > 2^b, n = q * 2^b + r for q > 0 and 0 <= r < 2^b
+    // floor_log2(q * 2^b + r) == floor_log2(q * 2^b) == q + floor_log2(n1)
+    // ceil_log2(n) == 1 + floor_log2(n-1)
     if (n <= 1)
         return std::uint32_t{1};
 
     std::uint32_t exp{1};
     --n;
-    // if n > 2^b, n = q * 2^b + r for q > 0 and 0 <= r < 2^b
-    // ceil_log2(q * 2^b + r) == ceil_log2(q * 2^b) == q + ceil_log2(n1)
     if (n >= (SizeT{1} << 32)) {
         n >>= 32;
         exp += 32;
@@ -1297,8 +1298,7 @@ private:
                         for (uint16_t i = 0; i < block_size; ++i) {
                             const uint16_t id = wi * block_size + i;
                             if (id < n)
-                                values[i] = std::move(
-                                    this_input_arr[iter_val_offset + id]);
+                                values[i] = this_input_arr[iter_val_offset + id];
                         }
 
                         while (true) {
@@ -1439,8 +1439,7 @@ private:
                                     if (r < n) {
                                         // move the values to source range and
                                         // destroy the values
-                                        this_output_arr[iter_val_offset + r] =
-                                            std::move(values[i]);
+                                        this_output_arr[iter_val_offset + r] = values[i];
                                     }
                                 }
 
@@ -1452,8 +1451,7 @@ private:
                             for (uint16_t i = 0; i < block_size; ++i) {
                                 const uint16_t r = indices[i];
                                 if (r < n)
-                                    exchange_acc[iter_exchange_offset + r] =
-                                        std::move(values[i]);
+                                    exchange_acc[iter_exchange_offset + r] = values[i];
                             }
 
                             sycl::group_barrier(ndit.get_group());
@@ -1462,9 +1460,9 @@ private:
                             for (uint16_t i = 0; i < block_size; ++i) {
                                 const uint16_t id = wi * block_size + i;
                                 if (id < n)
-                                    values[i] = std::move(
+                                    values[i] = 
                                         exchange_acc[iter_exchange_offset +
-                                                     id]);
+                                                     id];
                             }
 
                             sycl::group_barrier(ndit.get_group());

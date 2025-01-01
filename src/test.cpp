@@ -88,7 +88,7 @@ int main(void) {
   sycl::queue q{sycl::default_selector_v};
 
   
-  const std::size_t n = 255 * 2;
+  const std::size_t n = 511 * 2;
   const std::size_t k = 5;
   const std::size_t shift = 734;
 
